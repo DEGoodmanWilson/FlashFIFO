@@ -81,7 +81,7 @@ int flash_write(uint32_t addr, void*data, size_t n){
         if(fail_after)
         {
             if(fail_after == write_count){
-		printf("Simulate unexpected power down!\n");
+		//printf("Simulate unexpected power down!\n");
                 is_off = 1;
             }
         }
@@ -117,7 +117,7 @@ void flash_erase(uint32_t addr, size_t len){
 	store_write(addr, buf, len);
 	if( is_off ){
 
-		printf("Simulate unexpected power down!\n"); //TODO fix this functionality
+		//printf("Simulate unexpected power down!\n"); //TODO fix this functionality
 		free(buf);
                 return; //exit(0);
 	}

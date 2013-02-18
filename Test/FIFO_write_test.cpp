@@ -18,12 +18,12 @@
  along with FlashFIFO.  If not, see <http://www.gnu.org/licenses/>.
 
 *************************************
-
- This file implements a set of unit tests for checking the write behavior of the
- FIFO functions.
-
- TODO things being checked, at a general level include:
-
+ *
+ * This file implements a set of unit tests for checking the write behavior of the
+ * FIFO functions.
+ *
+ * TODO things being checked, at a general level include:
+ *
 ************************************/
 
 #include <CppUTest/TestHarness.h>
@@ -37,87 +37,112 @@ void flash_force_fail(uint8_t fail_after);
 void flash_force_succeed(void);
 }
 
+#define METADATA_SIZE   2
+#define DATA_VALID      0xFE
+#define DATA_CONSUMED   0xFC
+#define DATA_INVALID    0xFF
 
 static file_handle_t * f;
 extern uint8_t store[];
 
 TEST_GROUP(BasicFileWriteTest)
 {
+    //for each test, init the flash, and open a file at address 0
     void setup()
     {
-        flash_init();
+        flash_init(); //initialize flash
+        fs_init(); //initialize filesystem
         f = file_open( FILE_ROOT_BLOCK );
     }
 
     void teardown()
     {
-
+        file_close(f); //close the open file
     }
 };
 
+//first, check that file_open returns a non-null file handle.
 TEST(BasicFileWriteTest, FileCreate)
 {
     file_handle_t * f = NULL;
-    f = file_open( FILE_ROOT_BLOCK );
-    CHECK(f);
+    f = file_open( FILE_FIRMWARE );
+    CHECK(f); //checks for non-NULL value
 }
 
+//now, given that FILE_ROOT_BLOCK is already open, make sure we cannot open
+//it a second time
+TEST(BasicFileWriteTest, FileCreateDuplicate)
+{
+    file_handle_t * f = NULL;
+    f = file_open( FILE_ROOT_BLOCK );
+    CHECK_EQUAL(NULL, f);
+}
+
+//Check the setup routine to make sure that we get a fresh, blank flash drive
+//Just spot check a couple locations in flash
 TEST(BasicFileWriteTest, BlankStore)
 {
     CHECK_EQUAL(0xFF, store[0]); //just do a spot check that is fine
     CHECK_EQUAL(0xFF, store[10]);
 }
 
+//Check the low-level flash write routines to ensure they do as we would expect
 TEST(BasicFileWriteTest, RawWrite)
 {
     uint8_t raw[] = {1, 2, 3, 4};
     flash_write(10, (void *)raw, 4);
-    CHECK_EQUAL(raw[0], store[10]); //just do a spot check that is fine
+    CHECK_EQUAL(raw[0], store[10]);
     CHECK_EQUAL(raw[1], store[11]);
     CHECK_EQUAL(raw[2], store[12]);
     CHECK_EQUAL(raw[3], store[13]);
 }
 
+//Write a chunk to flash with file_write, make sure the data gets written properly
 TEST(BasicFileWriteTest, BasicWriteFirstChunk)
 {
     uint8_t data[] = {1, 2, 3, 4};
     file_write(f, data, 4);
-    CHECK_EQUAL(1, store[FILE_OFFSET+5]); //skip past metadata.
-    CHECK_EQUAL(2, store[FILE_OFFSET+6]);
-    CHECK_EQUAL(3, store[FILE_OFFSET+7]);
-    CHECK_EQUAL(4, store[FILE_OFFSET+8]);
+    CHECK_EQUAL(1, store[FILE_OFFSET+METADATA_SIZE]); //skip past metadata.
+    CHECK_EQUAL(2, store[FILE_OFFSET+METADATA_SIZE + 1]);
+    CHECK_EQUAL(3, store[FILE_OFFSET+METADATA_SIZE + 2]);
+    CHECK_EQUAL(4, store[FILE_OFFSET+METADATA_SIZE + 3]);
 }
 
+//Write a chunk to flash with file_write, make sure the metadata gets written properly
 TEST(BasicFileWriteTest, BasicWriteFirstChunk_CheckMetadata)
 {
     uint8_t size = 4;
     uint8_t data[] = {1, 2, 3, 4};
     file_write(f, data, 4);
-    CHECK_EQUAL(4, *(uint32_t*)(store+FILE_OFFSET)); //check metadata.
-    CHECK_EQUAL(0xFE, *(uint8_t*)(store+FILE_OFFSET+4)); //check metadata.
+    CHECK_EQUAL(4, store[FILE_OFFSET]); //check metadata.
+    CHECK_EQUAL(DATA_VALID, store[FILE_OFFSET+1]); //check metadata.
 }
 
+//Write two chunks in a row, check metadata integrity
 TEST(BasicFileWriteTest, TestWriteTwoChunksValidly)
 {
     uint8_t size = 4;
     uint8_t data[] = {1, 2, 3, 4};
     file_write(f, data, 4);
-    CHECK_EQUAL(1, store[FILE_OFFSET+5]); //skip past metadata.
-    CHECK_EQUAL(2, store[FILE_OFFSET+6]);
-    CHECK_EQUAL(3, store[FILE_OFFSET+7]);
-    CHECK_EQUAL(4, store[FILE_OFFSET+8]);
-    CHECK_EQUAL(size, *(uint32_t*)(store+FILE_OFFSET));
-    CHECK_EQUAL(0xFE, *(uint8_t*)(store+FILE_OFFSET+4));
+    CHECK_EQUAL(1, store[FILE_OFFSET+METADATA_SIZE]); //skip past metadata.
+    CHECK_EQUAL(2, store[FILE_OFFSET+METADATA_SIZE + 1]);
+    CHECK_EQUAL(3, store[FILE_OFFSET+METADATA_SIZE + 2]);
+    CHECK_EQUAL(4, store[FILE_OFFSET+METADATA_SIZE + 3]);
+    CHECK_EQUAL(4, store[FILE_OFFSET]); //check metadata.
+    CHECK_EQUAL(DATA_VALID, store[FILE_OFFSET+1]); //check metadata.
+    uint32_t new_offset = FILE_OFFSET+METADATA_SIZE+4;
 
     file_write(f, data, 4); //write it a second time, creating a second record
-    CHECK_EQUAL(1, store[FILE_OFFSET+14]);
-    CHECK_EQUAL(2, store[FILE_OFFSET+15]);
-    CHECK_EQUAL(3, store[FILE_OFFSET+16]);
-    CHECK_EQUAL(4, store[FILE_OFFSET+17]);
-    CHECK_EQUAL(size, *(uint32_t*)(store+FILE_OFFSET+9));
-    CHECK_EQUAL(0xFE, *(uint8_t*)(store+FILE_OFFSET+13));
+    CHECK_EQUAL(1, store[new_offset+METADATA_SIZE]);
+    CHECK_EQUAL(2, store[new_offset+METADATA_SIZE + 1]);
+    CHECK_EQUAL(3, store[new_offset+METADATA_SIZE + 2]);
+    CHECK_EQUAL(4, store[new_offset+METADATA_SIZE + 3]);
+    CHECK_EQUAL(4, store[new_offset]); //check metadata.
+    CHECK_EQUAL(DATA_VALID, store[new_offset+1]); //check metadata.
 }
 
+//Now, simulate a power off event while writing data. Check that the metadata is only
+//partially written, and in particular, that the "valid data" byte==DATA_INVALID
 TEST(BasicFileWriteTest, TestWritePowerOff)
 {
     uint8_t size = 14;
@@ -126,26 +151,91 @@ TEST(BasicFileWriteTest, TestWritePowerOff)
     flash_force_fail(1);
 
     file_write(f, data, size);
-    CHECK_EQUAL(size, *(uint32_t*)(store+FILE_OFFSET));
-    CHECK_EQUAL(0xFF, *(uint8_t*)(store+FILE_OFFSET+4));
+    CHECK_EQUAL(14, store[FILE_OFFSET]); //check metadata.
+    CHECK_EQUAL(DATA_INVALID, store[FILE_OFFSET+1]); //check metadata.
 }
 
-IGNORE_TEST(BasicFileWriteTest, DeleteOldPageOnWrite)
+//test writes of size 255 should fail. The should fail because 0xFF in the size location of metadata is a flag that there is no chunk from this point forward.
+TEST(BasicFileWriteTest, TestWriteTooBig1)
 {
-    uint8_t size = FLASH_PAGE_SIZE;
-    uint8_t data[FLASH_PAGE_SIZE] = {0};
-    file_write(f, data, size); //fill up one page
+    uint8_t size = 255;
+    uint8_t data[255] = {0};
+    uint32_t prev_write_loc = f->write_offset;
+    size = file_write(f, data, size);
 
-    file_read(f, data, size); //read it back out
-    file_consume(f, size); //and let it know we are DONE with that data.
-
-    file_write(f, data, size); //write out one more page.
-    //at this point, we should recycle the previous page, as we are DONE with it.
-
-    CHECK_EQUAL(0xFF, store[0]);
-    CHECK_EQUAL(0xFF, store[FLASH_PAGE_SIZE-1]);
+    CHECK_EQUAL(0x00, size); //make sure no data was reported as written
+    CHECK_EQUAL(prev_write_loc, f->write_offset); //make sure no data was recorded as written
+    CHECK_EQUAL(0xFF, store[METADATA_SIZE]); //make sure no data was actually written
 }
 
+//test to make sure that we cannot write a chunk /larger/ than 255, because all metadata is one byte in size to ensure all metadata writes are atomic.
+//Just want to be sure that this case is handled correctly, since 256 as a uint8_t is actually 1!
+TEST(BasicFileWriteTest, TestWriteTooBig2)
+{
+    uint16_t size = 0x00FF + 1;
+    uint8_t data[0x00FF + 1] = {0};
+
+    uint32_t prev_write_loc = f->write_offset;
+    size = file_write(f, data, size);
+
+    CHECK_EQUAL(0x00, size); //make sure no data was reported as written
+    CHECK_EQUAL(prev_write_loc, f->write_offset); //make sure no data was recorded as written
+    CHECK_EQUAL(0xFF, store[METADATA_SIZE]); //make sure no data was actually written
+}
+
+//All writes should be page-aligned, by which I mean a write must not span a
+//page boundary. Test that this is so
+TEST(BasicFileWriteTest, TestWriteAcrossPageBoundary1)
+{
+    //strategy: Write a single byte of data, then a full page's worth.
+    //The full page should start on a new page!
+    uint8_t i = 1;
+    file_write(f, &i, 1); //write one byte
+
+    uint8_t size = FLASH_PAGE_SIZE-METADATA_SIZE;
+    uint8_t data[FLASH_PAGE_SIZE-METADATA_SIZE] = {0};
+
+    file_write(f, data, FLASH_PAGE_SIZE-METADATA_SIZE);
+
+    //now, check both the store and the file handle
+    CHECK_EQUAL(0xFF, store[3]); //make sure nothing got written immediately after the one byte write
+    CHECK_EQUAL(FLASH_PAGE_SIZE-METADATA_SIZE, store[FLASH_PAGE_SIZE]); //check first byte of second page, make sure it contains the proper size
+    CHECK_EQUAL(0x00, store[FLASH_PAGE_SIZE + METADATA_SIZE]); //check first byte of written data to see that it was written.
+    CHECK_EQUAL(FLASH_PAGE_SIZE*2, f->write_offset); //check the file handle to see that the next write offset is in the correct place.
+}
+
+//Any write that is larger than the page size must fail, full stop
+TEST(BasicFileWriteTest, TestWriteAcrossPageBoundary2)
+{
+    uint8_t size = FLASH_PAGE_SIZE-METADATA_SIZE + 1;
+    uint8_t data[FLASH_PAGE_SIZE-METADATA_SIZE + 1] = {0};
+
+    uint32_t prev_write_loc = f->write_offset;
+    size = file_write(f, data, FLASH_PAGE_SIZE-METADATA_SIZE + 1);
+
+    CHECK_EQUAL(0x00, size); //make sure no data was reported as written
+    CHECK_EQUAL(prev_write_loc, f->write_offset); //make sure no data was recorded as written
+    CHECK_EQUAL(0xFF, store[METADATA_SIZE]); //make sure no data was actually written
+}
+
+//Writes should fail if the size being written takes us beyond the destructive read pointer,
+// i.e. are larger than the available space.
+//Since, for this test, the file size is three pages, simply attempt to write four and make sure the fourth fails
+TEST(BasicFileWriteTest, TestWriteLargerThanFreeSpace1)
+{
+    uint8_t size = FLASH_PAGE_SIZE - METADATA_SIZE;
+    uint8_t written;
+    uint8_t data[FLASH_PAGE_SIZE-METADATA_SIZE] = {0};
+
+    written = file_write(f, data, size); //chunk one, should pass
+    CHECK_EQUAL(size, written);
+    written = file_write(f, data, size); //chunk two, should pass
+    CHECK_EQUAL(size, written);
+    written = file_write(f, data, size); //chunk three, should pass
+    CHECK_EQUAL(size, written);
+    written = file_write(f, data, size); //chunk four, should FAIL, goes beyond current page, and first page is still in use
+    CHECK_EQUAL(0x00, written);
+}
 
 //CORNER CASES we haven't gotten to yet.
 

@@ -18,12 +18,13 @@
  along with FlashFIFO.  If not, see <http://www.gnu.org/licenses/>.
 
 *************************************
-
- This file implements a set of unit tests for checking the read behavior of the
- FIFO functions.
-
- TODO things being checked, at a general level include:
-
+ * This file implements a set of unit tests for checking the read behavior of the
+ * FIFO functions.
+ *
+ * Things being checked, at a general level include: reading across chunks,
+ * skipping invalid chunks, consuming across chunks (a weird case in its own right)
+ * properly erasing pages once fully consumed, that reads never read more than is
+ * available
 ************************************/
 
 
@@ -44,29 +45,33 @@ TEST_GROUP(BasicFileReadTest)
 {
     void setup()
     {
+        //each test begins by init'ing the system, and opening a file
         flash_init();
         f = file_open( FILE_ROOT_BLOCK );
 
+        //we also write four bytes of data to the file
         uint8_t data[] = {1, 2, 3, 4};
         file_write(f, data, 4);
     }
 
     void teardown()
     {
-
+        file_close(f);
     }
 };
 
 
+//This test just makes sure the setup routine above is working as expected
 TEST(BasicFileReadTest, CheckInit)
 {
-    CHECK_EQUAL(1, store[FILE_OFFSET+5]);
-    CHECK_EQUAL(2, store[FILE_OFFSET+6]);
-    CHECK_EQUAL(3, store[FILE_OFFSET+7]);
-    CHECK_EQUAL(4, store[FILE_OFFSET+8]);
-    CHECK_EQUAL(0xFF, store[FILE_OFFSET+9]);
+    CHECK_EQUAL(1, store[FILE_OFFSET+2]);
+    CHECK_EQUAL(2, store[FILE_OFFSET+3]);
+    CHECK_EQUAL(3, store[FILE_OFFSET+4]);
+    CHECK_EQUAL(4, store[FILE_OFFSET+5]);
+    CHECK_EQUAL(0xFF, store[FILE_OFFSET+6]);
 }
 
+//test the file_read function to see if it can read the four bytes placed there by setup
 TEST(BasicFileReadTest, TestFileRead)
 {
     uint8_t i = 0;
@@ -79,6 +84,7 @@ TEST(BasicFileReadTest, TestFileRead)
     CHECK_EQUAL(4, data[3]);
 }
 
+//check that the file handle is being updated correctly by file_read
 TEST(BasicFileReadTest, TestFileReadPtrIncr)
 {
     uint8_t i = 0;
@@ -87,6 +93,7 @@ TEST(BasicFileReadTest, TestFileReadPtrIncr)
     CHECK_EQUAL(4, f->read_offset);
 }
 
+//check that we can read in sub-chunk intervals by reading 3 bytes from the store
 TEST(BasicFileReadTest, TestFileReadLessThanFullChunk)
 {
     uint8_t i = 0;
@@ -100,6 +107,7 @@ TEST(BasicFileReadTest, TestFileReadLessThanFullChunk)
     CHECK_EQUAL(3, f->read_offset);
 }
 
+//check that we can read across chunk boundaries by writing a second chunk, then reading from both in one call
 TEST(BasicFileReadTest, TestFileReadAcrossMultipleChunks)
 {
     uint8_t w_data[4] = {5, 6, 7, 8}; //write a second chunk to memory
@@ -119,6 +127,7 @@ TEST(BasicFileReadTest, TestFileReadAcrossMultipleChunks)
     CHECK_EQUAL(6, f->read_offset);
 }
 
+//check that we can read across chunk boundaries when there is an invalid chunk in the middle of the read
 TEST(BasicFileReadTest, TestFileReadAcrossMultipleChunksWithInvalidData)
 {
     flash_force_fail(1);
@@ -142,6 +151,7 @@ TEST(BasicFileReadTest, TestFileReadAcrossMultipleChunksWithInvalidData)
     CHECK_EQUAL(6, f->read_offset);
 }
 
+//check that, having read four bytes (exactly one chunk in this case) that is is consumed properly
 IGNORE_TEST(BasicFileReadTest, TestFileConsumeBasic)
 {
     uint8_t i = 0;

@@ -55,6 +55,29 @@
 
 // Initialize any static variables
 
+static uint8_t open_handles[FILE_MAX] = {0}; //keeps track of which handles are currently open
+
+//a helper function to determine the amount of free space.
+static uint32_t free_space(file_handle_t *handle)
+{
+    //compare destructive pointer to write pointer.
+    //If write pointer is before destructive pointer, simply substract
+    if(handle->write_offset < handle->destructive_read_offset)
+        return handle->destructive_read_offset - handle->write_offset;
+    //else, the computation is somewhat trickier
+    else
+    {
+        uint32_t free = 0;
+        //get space from beginning of file
+        free += handle->destructive_read_offset - handle->start;
+        //get space from end of file
+        free += (handle->start + FILE_SIZE) - handle->write_offset;
+        return free;
+    }
+
+    return 0; //should never reach here, but just in case...
+}
+
 void
 fs_init(void) {
 
@@ -80,7 +103,12 @@ fs_sync(void) {
 
 file_handle_t *
 file_open(enum FILE_ID id) {
+    if(open_handles[id] >= MAX_HANDLES) //already open; could be easily expanded to contain the number of open handles
+        return NULL;
+    ++open_handles[id];
+
     file_handle_t * ret = malloc(sizeof (file_handle_t));
+    ret->file_id = id;
     ret->start = id * FILE_SIZE + FILE_OFFSET;
     ret->raw_read_chunk_start = 0; //so we can recover the location of the start of the current chunk!
     ret->read_offset = 0;
@@ -97,6 +125,7 @@ file_open(enum FILE_ID id) {
 void
 file_close(file_handle_t * handle) {
     file_sync(handle);
+    --open_handles[handle->file_id];
     free(handle);
 }
 
@@ -118,7 +147,7 @@ file_consume(file_handle_t * handle, size_t n) {
 // return the number of bytes that would be returned if one were to seek to 0
 // then read until end of file
 
-uint32_t
+size_t
 file_size(file_handle_t * handle) {
 
 }
@@ -139,36 +168,36 @@ size_t
 file_read(file_handle_t * handle, uint8_t* data, size_t size) {
     //TODO skipping bad chunks!
     //TODO check for catching up to write pointer , memory wrap-around, etc!
-    uint32_t i = 0;
+    size_t i = 0;
     while(size)
     {
         //read in the current chunk size, so we can calculate where the next chunk begins
-        uint32_t remaining_chunk_size;
+        uint8_t remaining_chunk_size;
 
-        flash_read(handle->raw_read_chunk_start, &remaining_chunk_size, 4);
+        flash_read(handle->raw_read_chunk_start, &remaining_chunk_size, 1);
         remaining_chunk_size -= handle->raw_read_chunk_offset;
 
         //make sure that the current chunk is valid. Notice that if raw_read_chunk_offset != 0, we have already validated the current chunk
         if(!handle->raw_read_chunk_offset) //we are at the beginning of a new chunk. Let's validate it
         //TODO NEED TO CHECK THAT WE ARE NOT EXTENDING BEYOND THE END OF THE FILE!!
         {
-           uint32_t chunk_size;
+           uint8_t chunk_size;
            uint8_t valid = 0;
-           flash_read(handle->raw_read_chunk_start, &chunk_size, 4);
-           flash_read(handle->raw_read_chunk_start + 4, &valid, 1);
+           flash_read(handle->raw_read_chunk_start, &chunk_size, 1);
+           flash_read(handle->raw_read_chunk_start + 1, &valid, 1);
            while(0xFE != valid)
            {
-               handle->raw_read_chunk_start += chunk_size + 5;
+               handle->raw_read_chunk_start += chunk_size + 2;
 
-               flash_read(handle->raw_read_chunk_start, &chunk_size, 4);
-               flash_read(handle->raw_read_chunk_start + 4, &valid, 1);
+               flash_read(handle->raw_read_chunk_start, &chunk_size, 1);
+               flash_read(handle->raw_read_chunk_start + 1, &valid, 1);
            }
         }
 
         //is the current chunk smaller than what we need? If so, we will be moving to the next chunk.
         if(remaining_chunk_size >= size) //chunk is smaller, we will only read what we need
         {
-            uint32_t read_amount = flash_read(handle->raw_read_chunk_start + 5 + handle->raw_read_chunk_offset, (void*)(data+i), size);
+            uint8_t read_amount = flash_read(handle->raw_read_chunk_start + 2 + handle->raw_read_chunk_offset, (void*)(data+i), size);
             handle->read_offset += read_amount;
             handle->raw_read_chunk_offset += read_amount;
             size -= read_amount;
@@ -178,15 +207,16 @@ file_read(file_handle_t * handle, uint8_t* data, size_t size) {
         else //we need to shift into the next chunk, and keep going
         {
             //read all of the remaining chunk
-            uint32_t read_amount = flash_read(handle->raw_read_chunk_start + 5 + handle->raw_read_chunk_offset, (void*)(data+i), remaining_chunk_size);
+            uint8_t read_amount = flash_read(handle->raw_read_chunk_start + 2 + handle->raw_read_chunk_offset, (void*)(data+i), remaining_chunk_size);
             handle->read_offset += read_amount;
             size -= read_amount;
             i += read_amount;
             //move to next chunk
-            handle->raw_read_chunk_start += read_amount + 5;
+            handle->raw_read_chunk_start += read_amount + 2;
             handle->raw_read_chunk_offset = 0;
         }
     }
+    return i;
 }
 
 // set read and write pointers to offset in file
@@ -209,18 +239,38 @@ uint32_t file_tell(file_handle_t * handle) {
 
 size_t
 file_write(file_handle_t *handle, uint8_t* data, size_t size) {
+
+    if(size >= 0xFF) //reject, because this value is used as a flag for unused memory!
+        //Also because we can only write one byte at a time atomically, we limit all metadata writes, including the record of the number of bytes written, to one byte.
+        return 0;
+
+    if((size+2) > FLASH_PAGE_SIZE) //reject, because we cannot write chunks larger than the page size
+        return 0;
+
+    if((size+2) > free_space(handle)) //reject if not enough available space
+        return 0;
+
     uint32_t start = handle->start + handle->write_offset;
 
+    //here we need to find where we can put this chunk. Because writes cannot span page boundaries, we need to see if there is space on the current page or not
+    //first, identify where the next page boundary is
+    uint32_t next_page = FLASH_PAGE_SIZE * (start / FLASH_PAGE_SIZE) + FLASH_PAGE_SIZE;
+    if((size+2) > (next_page - start)) //if not enough room in current page for metadata + data
+    {
+        start = next_page; //shift to next page.
+    }
+
     //First, write first bit of metadata containing the actual addresses we are attempting to write to
-    flash_write(start, &size, 4);
+    flash_write(start, &size, 1);
 
     //Now, attempt to commit the data itself
-    flash_write(start + 4 + 1, data, size);
+    flash_write(start + 2, data, size);
 
     //If we reach here successfully, the data is written and valid. Mark it so in the metadata
     uint8_t flags = 0xFE;
-    flash_write(start + 4, &flags, 1);
+    flash_write(start + 1, &flags, 1);
 
 
-    handle->write_offset += 4 + 1 + size; //skip the metadata and written
+    handle->write_offset = start + 2 + size; //skip the metadata and written
+    return size;
 }

@@ -40,7 +40,7 @@ extern "C" {
 #define FILE_OFFSET 0
 
 enum FILE_ID {
-    FILE_ROOT_BLOCK,
+    FILE_ROOT_BLOCK = 0,
     FILE_FIRMWARE,
     FILE_DRIVE_LOG,
     FILE_DEBUG_LOG,
@@ -51,7 +51,12 @@ enum FILE_ID {
     FILE_MAX
 };
 
+//how many handles to a particular file can be given out to user code?
+#define MAX_HANDLES 1
+
 typedef struct file_handle_proto_t {
+    enum FILE_ID  file_id;
+
     uint32_t metadata_raw_start;
     uint32_t metadata_write_offset;
 
@@ -78,7 +83,7 @@ file_handle_t* file_open( enum FILE_ID id );
 void          file_close( file_handle_t* handle );
 void          file_truncate( enum FILE_ID id );
 void          file_consume( file_handle_t * handle, size_t n); //read/delete n bytes off the top of the FIFO
-uint32_t      file_size( file_handle_t* handle );
+size_t      file_size( file_handle_t* handle );
 void          file_sync( file_handle_t* handle );
 size_t        file_read( file_handle_t* handle, uint8_t* data, size_t size );
 void          file_seek( file_handle_t* handle, uint32_t offset, int whence );
