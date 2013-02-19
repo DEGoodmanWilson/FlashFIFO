@@ -56,6 +56,13 @@ static void store_write(uint32_t addr, void*data, size_t n){
     }
 }
 
+static void store_erase_page(uint16_t page_num)
+{
+    uint32_t addr = page_num*FLASH_PAGE_SIZE;
+    for(uint32_t i = addr; i < (addr+FLASH_PAGE_SIZE); ++i)
+        store[i] = 0xFF;
+}
+
 static void store_read(uint32_t addr, void* data, size_t n){
     for(uint32_t i = 0; i < n; ++i)
         *(uint8_t*)(data+i) = store[i+addr];
@@ -109,21 +116,6 @@ void flash_erase(uint32_t addr, size_t len){
 	assert( len % FLASH_PAGE_SIZE == 0 ); //TODO are these assertions going to be correct?
 	assert( addr % FLASH_PAGE_SIZE == 0 );
 
-	char * buf = malloc(len);
-	store_read(addr, buf, len );
-	for( int i=0; i<len; i++){
-		buf[i] |= rand();
-	}
-	store_write(addr, buf, len);
-	if( is_off ){
-
-		//printf("Simulate unexpected power down!\n"); //TODO fix this functionality
-		free(buf);
-                return; //exit(0);
-	}
-	memset(buf, 0xff, len );
-	store_write(addr, buf, len );
-
-	free(buf);
+        store_erase_page(addr / FLASH_PAGE_SIZE);
 }
 

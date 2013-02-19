@@ -237,6 +237,32 @@ TEST(BasicFileWriteTest, TestWriteLargerThanFreeSpace1)
     CHECK_EQUAL(0x00, written);
 }
 
+//This is a FIFO, aka ring buffer. Once writes reach the end of the buffer, if there remains
+//free space, the writes should wrap around!
+TEST(BasicFileWriteTest, TestWritesThatWrapAround)
+{
+    uint8_t size = FLASH_PAGE_SIZE-METADATA_SIZE;
+    uint8_t data[FLASH_PAGE_SIZE-METADATA_SIZE] = {0};
+
+    //files in this test are 3 pages long. So let's begin by simply writing three pages of data
+    file_write(f, data, size);
+    file_write(f, data, size);
+    file_write(f, data, size);
+    //now, free up the first page by consuming it.
+    file_read(f, data, size);
+    file_consume(f, size);
+    //make sure first page is free
+    CHECK_EQUAL(0xFF, store[0]);
+
+    //and write another page. Should go at beginning just fine
+    uint8_t written = file_write(f, data, size);
+    CHECK_EQUAL(size, written);
+    CHECK_EQUAL(size, store[0]);
+}
+
+//Check that writes that reach the end of the allocated space wrap around to the
+//first page again correctly
+
 //CORNER CASES we haven't gotten to yet.
 
 // Writes that takeus beyond the available space, i.e. that catch up to the read pointer

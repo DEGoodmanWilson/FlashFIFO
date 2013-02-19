@@ -62,7 +62,7 @@ typedef struct file_handle_proto_t {
 
     uint32_t start;
     uint32_t write_offset;
-    uint32_t read_offset;
+
     uint32_t raw_read_chunk_start;
     uint32_t raw_read_chunk_offset;
     uint32_t destructive_read_offset;
@@ -82,7 +82,7 @@ void fs_sync( void );
 file_handle_t* file_open( enum FILE_ID id );
 void          file_close( file_handle_t* handle );
 void          file_truncate( enum FILE_ID id );
-void          file_consume( file_handle_t * handle, size_t n); //read/delete n bytes off the top of the FIFO
+size_t          file_consume( file_handle_t * handle, size_t n); //read/delete n bytes off the top of the FIFO
 size_t      file_size( file_handle_t* handle );
 void          file_sync( file_handle_t* handle );
 size_t        file_read( file_handle_t* handle, uint8_t* data, size_t size );
