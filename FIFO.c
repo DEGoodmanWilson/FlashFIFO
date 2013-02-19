@@ -112,26 +112,32 @@ file_open(enum FILE_ID id)
     //  The modificiations to make that happen shouldn't be hard to make.
 
     uint8_t first_write_page = 0;
-    uint8_t biggest = 0;
+    uint8_t pages_written = 0;
+    uint8_t smallest = 0xFF;
     uint8_t i;
     uint8_t counter = 0;
     for (i = 0; i < (FILE_SIZE / FLASH_PAGE_SIZE); ++i) //iterate over pages
     {
         //read first byte
         flash_read(ret->start + (FLASH_PAGE_SIZE*i), &counter, 1);
-        if ((counter != 0xFF) && (counter > biggest))
+        if (counter != 0xFF)
         {
-            biggest = counter;
-            first_write_page = i;
+            ++pages_written;
+            if(counter < smallest)
+            {
+                smallest = counter;
+                first_write_page = i;
+            }
         }
     }
     ret->write_offset = first_write_page * FLASH_PAGE_SIZE;
-    if (biggest > 0)
+    if (smallest < 0xFF)
     {
-        ret->write_count = 8-count_ones(biggest) + 1;
+        ret->write_count = 8-count_ones(smallest) + 1;
         if(ret->write_count == 9) ret->write_count = 1;
     }
-    ret->free_space -= first_write_page * FLASH_PAGE_SIZE + (first_write_page * PAGE_COUNTER_SIZE); //number of bytes written - number of counter bytes
+    if(pages_written)
+            ret->free_space = FILE_SIZE - ((pages_written-1)*FLASH_PAGE_SIZE) - (FILE_SIZE/FLASH_PAGE_SIZE * PAGE_COUNTER_SIZE); //number of bytes written - number of counter bytes
 
     //now that we have the /page/ let's identify the /chunk/!
     //possibility that this page is entirely free, which we need to consider. Will recognize it because first byte is 0xFF
@@ -140,7 +146,7 @@ file_open(enum FILE_ID id)
     uint8_t size = 0;
     flash_read(ret->start + ret->write_offset + 1, &size, 1);
     //a free chunk is one in which the size is 0xFF
-    if(size == 0xFF) //starting on a new page
+    if(size == 0xFF) //starting on a fresh page
     {
         //read in the page counter to see if it is free or not.
             uint8_t check = 0;
@@ -154,16 +160,16 @@ file_open(enum FILE_ID id)
             }
             ret->write_offset += PAGE_COUNTER_SIZE;
     }
-    else
+    else //need to find our place in this page.
     {
         //skip past page counter
         ret->write_offset += PAGE_COUNTER_SIZE;
+        flash_read(ret->start + ret->write_offset, &size, 1);
         while (size != 0xFF)
         {
             //advance a chunk
             ret->write_offset += size + 2;
             ret->free_space -= size + 2;
-            flash_read(ret->start + ret->write_offset, &size, 1);
             //now, we may have crossed a page boundary. If we did, it is because the last page written was /completely/ full.
             // We need to stop advancing at this point, because either a) we have found free space or b) we have bumped up against a not-yet-consumed chunk
             // check which case that is, and if the space is free, then we need to set the page counter
@@ -182,6 +188,7 @@ file_open(enum FILE_ID id)
                 ret->write_offset += PAGE_COUNTER_SIZE;
                 break; //exit the loop
             }
+            flash_read(ret->start + ret->write_offset, &size, 1);
         }
     }
     return ret;
