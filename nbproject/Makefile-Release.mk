@@ -39,7 +39,8 @@ OBJECTFILES= \
 	${OBJECTDIR}/Test/FIFO_write_test.o \
 	${OBJECTDIR}/Test/flash_port_mock.o \
 	${OBJECTDIR}/Test/test_main.o \
-	${OBJECTDIR}/FIFO.o
+	${OBJECTDIR}/FIFO.o \
+	${OBJECTDIR}/Test/FIFO_recover_handle_test.o
 
 
 # C Compiler Flags
@@ -92,6 +93,11 @@ ${OBJECTDIR}/FIFO.o: FIFO.c
 	${MKDIR} -p ${OBJECTDIR}
 	${RM} $@.d
 	$(COMPILE.c) -O2 -I. -I/usr/local/share/CppUTest/include -MMD -MP -MF $@.d -o ${OBJECTDIR}/FIFO.o FIFO.c
+
+${OBJECTDIR}/Test/FIFO_recover_handle_test.o: Test/FIFO_recover_handle_test.cpp 
+	${MKDIR} -p ${OBJECTDIR}/Test
+	${RM} $@.d
+	$(COMPILE.cc) -O2 -I. -I/usr/local/share/CppUTest/include -MMD -MP -MF $@.d -o ${OBJECTDIR}/Test/FIFO_recover_handle_test.o Test/FIFO_recover_handle_test.cpp
 
 # Subprojects
 .build-subprojects:

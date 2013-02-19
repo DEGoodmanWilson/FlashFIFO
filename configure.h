@@ -30,7 +30,7 @@
 //these are basic default values for the flash size that are not at all
 //realistic, but useful for testing.
 #define FLASH_PAGE_SIZE ( 128 )
-#define FLASH_CHIP_SIZE ( 16 * FLASH_PAGE_SIZE )
+#define FLASH_CHIP_SIZE ( 64 * FLASH_PAGE_SIZE )
 
 
 #endif	/* CONFIGURE_H */

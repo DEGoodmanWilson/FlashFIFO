@@ -20,6 +20,7 @@
           <itemPath>Test/flash_port_mock.c</itemPath>
         </logicalFolder>
         <itemPath>Test/FIFO_read_test.cpp</itemPath>
+        <itemPath>Test/FIFO_recover_handle_test.cpp</itemPath>
         <itemPath>Test/FIFO_write_test.cpp</itemPath>
         <itemPath>Test/test_main.cpp</itemPath>
       </logicalFolder>

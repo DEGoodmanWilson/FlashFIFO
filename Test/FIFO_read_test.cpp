@@ -64,11 +64,11 @@ TEST_GROUP(BasicFileReadTest)
 //This test just makes sure the setup routine above is working as expected
 TEST(BasicFileReadTest, CheckInit)
 {
-    CHECK_EQUAL(1, store[f->start+2]);
-    CHECK_EQUAL(2, store[f->start+3]);
-    CHECK_EQUAL(3, store[f->start+4]);
-    CHECK_EQUAL(4, store[f->start+5]);
-    CHECK_EQUAL(0xFF, store[f->start+6]);
+    CHECK_EQUAL(1, store[f->start+PAGE_COUNTER_SIZE+2]);
+    CHECK_EQUAL(2, store[f->start+PAGE_COUNTER_SIZE+3]);
+    CHECK_EQUAL(3, store[f->start+PAGE_COUNTER_SIZE+4]);
+    CHECK_EQUAL(4, store[f->start+PAGE_COUNTER_SIZE+5]);
+    CHECK_EQUAL(0xFF, store[f->start+PAGE_COUNTER_SIZE+6]);
 }
 
 //test the file_read function to see if it can read the four bytes placed there by setup
@@ -91,7 +91,7 @@ TEST(BasicFileReadTest, TestFileReadPtrIncr)
     uint8_t i = 0;
     uint8_t data[4] = {0, 0, 0, 0};
     i = file_read( f, data, 4 );
-    CHECK_EQUAL(6, f->raw_read_chunk_start); //address of the start of the next chunk
+    CHECK_EQUAL(7, f->raw_read_chunk_start); //address of the start of the next chunk
     CHECK_EQUAL(0, f->raw_read_chunk_offset); //offset within chunk
 }
 
@@ -126,7 +126,7 @@ TEST(BasicFileReadTest, TestFileReadAcrossMultipleChunks)
     CHECK_EQUAL(4, data[3]);
     CHECK_EQUAL(5, data[4]);
     CHECK_EQUAL(6, data[5]);
-    CHECK_EQUAL(6, f->raw_read_chunk_start);
+    CHECK_EQUAL(7, f->raw_read_chunk_start);
     CHECK_EQUAL(2, f->raw_read_chunk_offset);
 }
 
@@ -161,10 +161,10 @@ TEST(BasicFileReadTest, TestFileConsumeBasic)
     uint8_t data[4] = {0, 0, 0, 0};
     i = file_read(f, data, 4);
     file_consume(f, 4);
-    CHECK_EQUAL(0xFC, store[f->start+1]);
-    CHECK_EQUAL(6, f->raw_read_chunk_start);
+    CHECK_EQUAL(0xFC, store[f->start+PAGE_COUNTER_SIZE+1]);
+    CHECK_EQUAL(7, f->raw_read_chunk_start);
     CHECK_EQUAL(0, f->raw_read_chunk_offset);
-    CHECK_EQUAL(6, f->destructive_read_offset);
+    CHECK_EQUAL(7, f->destructive_read_offset);
 }
 
 //make sure that if we consume only a part of one chunk, we do not actually consume it
@@ -173,10 +173,10 @@ TEST(BasicFileReadTest, TestFileConsumePartialChunks1)
     uint8_t data[4];
     file_read(f, data, 4); //read the chunk to advance the read pointer
     file_consume(f, 2); //consume part of one chunk; should refuse to consume
-    CHECK_EQUAL(0xFE, store[f->start+1]);
-    CHECK_EQUAL(6, f->raw_read_chunk_start);
+    CHECK_EQUAL(0xFE, store[f->start+PAGE_COUNTER_SIZE+1]);
+    CHECK_EQUAL(7, f->raw_read_chunk_start);
     CHECK_EQUAL(0, f->raw_read_chunk_offset);
-    CHECK_EQUAL(0, f->destructive_read_offset); //make sure the destructive read offset doesn't advance!
+    CHECK_EQUAL(1, f->destructive_read_offset); //make sure the destructive read offset doesn't advance!
 }
 
 
@@ -187,23 +187,23 @@ TEST(BasicFileReadTest, TestFileConsumePartialChunks2)
     file_write(f, data, 4);
     file_read(f, data_more, 8); //read both chunks to advance the read pointer
     file_consume(f, 6); //consume one chunk, and consider the next part. Second chunk should not be consumed
-    CHECK_EQUAL(0xFE, store[f->start+7]);
-    CHECK_EQUAL(12, f->raw_read_chunk_start);
+    CHECK_EQUAL(0xFE, store[f->start+PAGE_COUNTER_SIZE+7]);
+    CHECK_EQUAL(13, f->raw_read_chunk_start);
     CHECK_EQUAL(0, f->raw_read_chunk_offset);
-    CHECK_EQUAL(6, f->destructive_read_offset); //make sure the destructive read offset doesn't advance beyond first chunk
+    CHECK_EQUAL(7, f->destructive_read_offset); //make sure the destructive read offset doesn't advance beyond first chunk
 }
 
 //sometimes writes leave some blank space at the end of a page. Make sure we skip that when reading!
 TEST(BasicFileReadTest, TestFileReadEndOfIncompletePage)
 {
     //we laready have 4 bytes on page one. Let's write a full page, which will begin on page 2. Then see if doing a read catches up properly
-    uint8_t size = FLASH_PAGE_SIZE - 2;
-    uint8_t data[FLASH_PAGE_SIZE - 2] = {0};
+    uint8_t size = FLASH_PAGE_SIZE - 2 - PAGE_COUNTER_SIZE;
+    uint8_t data[FLASH_PAGE_SIZE - 2 - PAGE_COUNTER_SIZE] = {0};
 
     file_write(f, data, size); //won't fit on page 1, moves ahead to page 2
     file_read(f, data, 4); //read first chunk, read point should advance past dead space to second page.
 
-    CHECK_EQUAL(128, f->raw_read_chunk_start);
+    CHECK_EQUAL(129, f->raw_read_chunk_start);
 }
 
 //Now test the wrap-around functionality.
@@ -213,15 +213,15 @@ TEST(BasicFileReadTest, TestReadWrapsAroundEnd)
 {
     //first, let's write three pages, filling the file. We will then consume one page, and write one page to cause wrap around.
     //This test presumes that write wrap-around works, and that page-erase works
-    uint8_t size = FLASH_PAGE_SIZE-2;
-    uint8_t data[FLASH_PAGE_SIZE-2] = {0};
+    uint8_t size = FLASH_PAGE_SIZE-2- PAGE_COUNTER_SIZE;
+    uint8_t data[FLASH_PAGE_SIZE-2- PAGE_COUNTER_SIZE] = {0};
 
     file_write(f, data, size); //this will actually go onto the second page, because it is too large to fit on first page with the 4 bytes already there.
     file_write(f, data, size); //this will go to third page
     //verify that we have three pages of data
-    CHECK_EQUAL(4, store[f->start+0]);
-    CHECK_EQUAL(size, store[f->start+128]);
-    CHECK_EQUAL(size, store[f->start+256]);
+    CHECK_EQUAL(4, store[f->start+PAGE_COUNTER_SIZE+0]);
+    CHECK_EQUAL(size, store[f->start+PAGE_COUNTER_SIZE+128]);
+    CHECK_EQUAL(size, store[f->start+PAGE_COUNTER_SIZE+256]);
 
     //consume the data on the first page
     file_read(f, data, 4); //moves read pointer to beginning of second page, 128
@@ -233,10 +233,10 @@ TEST(BasicFileReadTest, TestReadWrapsAroundEnd)
     //now, the write pointer is at the beginning of the second page, as is the read pointer. advance the read pointer all the way around
     uint8_t read = file_read(f, data, size); //moves pointer to beginning of third page, 256
     CHECK_EQUAL(size, read);
-    CHECK_EQUAL(256, f->raw_read_chunk_start);
+    CHECK_EQUAL(257, f->raw_read_chunk_start);
     read = file_read(f, data, size); //moves pointer to wrap around to first page, 0
     CHECK_EQUAL(size, read);
-    CHECK_EQUAL(0, f->raw_read_chunk_start);
+    CHECK_EQUAL(1, f->raw_read_chunk_start);
 }
 
 
@@ -244,10 +244,10 @@ TEST(BasicFileReadTest, TestReadWrapsAroundEnd)
 TEST(BasicFileReadTest, TestFileConsumeBeyondReadPointer1)
 {
     file_consume(f, 4);
-    CHECK_EQUAL(0xFE, store[f->start+1]);
-    CHECK_EQUAL(0, f->raw_read_chunk_start);
+    CHECK_EQUAL(0xFE, store[f->start+PAGE_COUNTER_SIZE+1]);
+    CHECK_EQUAL(1, f->raw_read_chunk_start);
     CHECK_EQUAL(0, f->raw_read_chunk_offset);
-    CHECK_EQUAL(0, f->destructive_read_offset); //make sure the destructive read offset doesn't advance!
+    CHECK_EQUAL(1, f->destructive_read_offset); //make sure the destructive read offset doesn't advance!
 }
 
 //Repeat test with a little more data
@@ -259,11 +259,11 @@ TEST(BasicFileReadTest, TestFileConsumeBeyondReadPointer2)
     file_read(f, data_more, 6); //read all of chunk one, and part of chunk 2
     uint8_t consumed = file_consume(f, 8); //ask to consume two chunks; only first should be consumed
     CHECK_EQUAL(consumed, 4);
-    CHECK_EQUAL(0xFC, store[f->start+1]); //check first chunk marked as consumed
-    CHECK_EQUAL(0xFE, store[f->start+7]); //check second chunk NOT marked as consumed
-    CHECK_EQUAL(6, f->raw_read_chunk_start);
+    CHECK_EQUAL(0xFC, store[f->start+PAGE_COUNTER_SIZE+1]); //check first chunk marked as consumed
+    CHECK_EQUAL(0xFE, store[f->start+PAGE_COUNTER_SIZE+7]); //check second chunk NOT marked as consumed
+    CHECK_EQUAL(7, f->raw_read_chunk_start);
     CHECK_EQUAL(2, f->raw_read_chunk_offset);
-    CHECK_EQUAL(6, f->destructive_read_offset); //make sure the destructive read offset doesn't advance!
+    CHECK_EQUAL(7, f->destructive_read_offset); //make sure the destructive read offset doesn't advance!
 }
 
 //check that a read operation does not extend beyond the write pointer
@@ -279,7 +279,7 @@ TEST(BasicFileReadTest, TestFileConsumeBeyondWritePointer)
 
     CHECK_EQUAL(4, read); //make sure only 4 bytes actually read
     CHECK_EQUAL(4, consumed); //make sure only 4 bytes consumed
-    CHECK_EQUAL(0xFF, store[f->start+6]); //make sure store beyond write pointer was not touched
+    CHECK_EQUAL(0xFF, store[f->start+PAGE_COUNTER_SIZE+6]); //make sure store beyond write pointer was not touched
 }
 
 //check that a read operation wraps around the last page correctly
@@ -307,8 +307,8 @@ TEST(BasicFileReadTest, TestPageConsumptionErasesPage)
         --chunks;
     }
     //make sure that first page got erased, but second has not
-    CHECK_EQUAL(0xFF, store[f->start+0]); //0xFF means it was erased
-    CHECK_EQUAL(0x04, store[f->start+128]); //first byte of second page
+    CHECK_EQUAL(0xFF, store[f->start+PAGE_COUNTER_SIZE+0]); //0xFF means it was erased
+    CHECK_EQUAL(0x04, store[f->start+PAGE_COUNTER_SIZE+128]); //first byte of second page
 }
 
 //check that a destructive read that completes a page wipes the page
@@ -335,9 +335,9 @@ TEST(BasicFileReadTest, TestPageConsumptionErasesTwoPages)
         --chunks;
     }
     //make sure that first and second page got erased, but third has not
-    CHECK_EQUAL(0xFF, store[f->start+0]); //0xFF means it was erased
-    CHECK_EQUAL(0xFF, store[f->start+128]); //first byte of second page
-    CHECK_EQUAL(0x04, store[f->start+256]); //third page should be intact
+    CHECK_EQUAL(0xFF, store[f->start+PAGE_COUNTER_SIZE+0]); //0xFF means it was erased
+    CHECK_EQUAL(0xFF, store[f->start+PAGE_COUNTER_SIZE+128]); //first byte of second page
+    CHECK_EQUAL(0x04, store[f->start+PAGE_COUNTER_SIZE+256]); //third page should be intact
 }
 
 //Need check for power failure during page erasure, to make sure we can recover properly from that.

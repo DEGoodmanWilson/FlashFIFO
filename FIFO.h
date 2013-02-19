@@ -37,7 +37,7 @@ extern "C" {
 // For SEEK_SET, SEEK_END, etc.
 
 #define FILE_SIZE (3*FLASH_PAGE_SIZE) //each file is 3 pages; allows for triple buffering
-#define FILE_OFFSET FLASH_PAGE_SIZE //must be a multiple of a page size!
+#define FILE_OFFSET 0 //must be a multiple of a page size!
 
 enum FILE_ID {
     FILE_ROOT_BLOCK = 0,
@@ -53,6 +53,7 @@ enum FILE_ID {
 
 //how many handles to a particular file can be given out to user code?
 #define MAX_HANDLES 1
+#define PAGE_COUNTER_SIZE 1
 
 typedef struct file_handle_proto_t {
     enum FILE_ID  file_id;
@@ -68,6 +69,8 @@ typedef struct file_handle_proto_t {
     uint32_t destructive_read_offset;
 
     uint32_t free_space;
+
+    uint8_t write_count;
 } file_handle_t;
 
 #define INVALID_FILE_HANDLE   ((file_handle_t*)NULL)
