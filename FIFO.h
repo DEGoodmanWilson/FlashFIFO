@@ -37,7 +37,7 @@ extern "C" {
 // For SEEK_SET, SEEK_END, etc.
 
 #define FILE_SIZE (3*FLASH_PAGE_SIZE) //each file is 3 pages; allows for triple buffering
-#define FILE_OFFSET 0
+#define FILE_OFFSET FLASH_PAGE_SIZE //must be a multiple of a page size!
 
 enum FILE_ID {
     FILE_ROOT_BLOCK = 0,
@@ -69,16 +69,8 @@ typedef struct file_handle_proto_t {
 
     uint32_t free_space;
 } file_handle_t;
+
 #define INVALID_FILE_HANDLE   ((file_handle_t*)NULL)
-
-void fs_init( void );
-
-// Set all files to empty.
-// At any time, each file should be either empty or unchaged
-void fs_format( void );
-
-// When this function returns, all file modifications must be commited
-void fs_sync( void );
 
 //write and consume should be atomic
 file_handle_t* file_open( enum FILE_ID id );

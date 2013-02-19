@@ -52,7 +52,6 @@ TEST_GROUP(BasicFileWriteTest)
     void setup()
     {
         flash_init(); //initialize flash
-        fs_init(); //initialize filesystem
         f = file_open( filename );
     }
 
@@ -103,10 +102,10 @@ TEST(BasicFileWriteTest, BasicWriteFirstChunk)
 {
     uint8_t data[] = {1, 2, 3, 4};
     file_write(f, data, 4);
-    CHECK_EQUAL(1, store[f->start+FILE_OFFSET+METADATA_SIZE]); //skip past metadata.
-    CHECK_EQUAL(2, store[f->start+FILE_OFFSET+METADATA_SIZE + 1]);
-    CHECK_EQUAL(3, store[f->start+FILE_OFFSET+METADATA_SIZE + 2]);
-    CHECK_EQUAL(4, store[f->start+FILE_OFFSET+METADATA_SIZE + 3]);
+    CHECK_EQUAL(1, store[f->start+METADATA_SIZE]); //skip past metadata.
+    CHECK_EQUAL(2, store[f->start+METADATA_SIZE + 1]);
+    CHECK_EQUAL(3, store[f->start+METADATA_SIZE + 2]);
+    CHECK_EQUAL(4, store[f->start+METADATA_SIZE + 3]);
 }
 
 //Write a chunk to flash with file_write, make sure the metadata gets written properly
@@ -115,8 +114,8 @@ TEST(BasicFileWriteTest, BasicWriteFirstChunk_CheckMetadata)
     uint8_t size = 4;
     uint8_t data[] = {1, 2, 3, 4};
     file_write(f, data, 4);
-    CHECK_EQUAL(4, store[f->start+FILE_OFFSET]); //check metadata.
-    CHECK_EQUAL(DATA_VALID, store[f->start+FILE_OFFSET+1]); //check metadata.
+    CHECK_EQUAL(4, store[f->start]); //check metadata.
+    CHECK_EQUAL(DATA_VALID, store[f->start+1]); //check metadata.
 }
 
 //Write two chunks in a row, check metadata integrity
@@ -125,13 +124,13 @@ TEST(BasicFileWriteTest, TestWriteTwoChunksValidly)
     uint8_t size = 4;
     uint8_t data[] = {1, 2, 3, 4};
     file_write(f, data, 4);
-    CHECK_EQUAL(1, store[f->start+FILE_OFFSET+METADATA_SIZE]); //skip past metadata.
-    CHECK_EQUAL(2, store[f->start+FILE_OFFSET+METADATA_SIZE + 1]);
-    CHECK_EQUAL(3, store[f->start+FILE_OFFSET+METADATA_SIZE + 2]);
-    CHECK_EQUAL(4, store[f->start+FILE_OFFSET+METADATA_SIZE + 3]);
-    CHECK_EQUAL(4, store[f->start+FILE_OFFSET]); //check metadata.
-    CHECK_EQUAL(DATA_VALID, store[f->start+FILE_OFFSET+1]); //check metadata.
-    uint32_t new_offset = FILE_OFFSET+METADATA_SIZE+4;
+    CHECK_EQUAL(1, store[f->start+METADATA_SIZE]); //skip past metadata.
+    CHECK_EQUAL(2, store[f->start+METADATA_SIZE + 1]);
+    CHECK_EQUAL(3, store[f->start+METADATA_SIZE + 2]);
+    CHECK_EQUAL(4, store[f->start+METADATA_SIZE + 3]);
+    CHECK_EQUAL(4, store[f->start]); //check metadata.
+    CHECK_EQUAL(DATA_VALID, store[f->start+1]); //check metadata.
+    uint32_t new_offset = METADATA_SIZE+4;
 
     file_write(f, data, 4); //write it a second time, creating a second record
     CHECK_EQUAL(1, store[f->start+new_offset+METADATA_SIZE]);
@@ -152,8 +151,8 @@ TEST(BasicFileWriteTest, TestWritePowerOff)
     flash_force_fail(1);
 
     file_write(f, data, size);
-    CHECK_EQUAL(14, store[f->start+FILE_OFFSET]); //check metadata.
-    CHECK_EQUAL(DATA_INVALID, store[f->start+FILE_OFFSET+1]); //check metadata.
+    CHECK_EQUAL(14, store[f->start]); //check metadata.
+    CHECK_EQUAL(DATA_INVALID, store[f->start+1]); //check metadata.
 }
 
 //test writes of size 255 should fail. The should fail because 0xFF in the size location of metadata is a flag that there is no chunk from this point forward.

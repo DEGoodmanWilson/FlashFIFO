@@ -63,39 +63,21 @@ static uint32_t free_space(file_handle_t *handle)
     return handle->free_space;
 }
 
+//and the inverse
 static uint32_t used_space(file_handle_t *handle)
 {
     return FILE_SIZE - handle->free_space;
 }
 
-void
-fs_init(void) {
-
-}
-
-// Clear (truncate) All files
-// Unexpected power down should result only in cleared files, or no change
-// When function returns, filesystem should be sync'd
-
-void
-fs_format(void) {
-    flash_erase(0, FLASH_CHIP_SIZE);
-}
-
-// Equivilent to calling sync on all open handles
-
-void
-fs_sync(void) {
-
-}
 
 // Initialize anything in the per-handle structure
-
 file_handle_t *
 file_open(enum FILE_ID id) {
-    if(open_handles[id] >= MAX_HANDLES) //already open; could be easily expanded to contain the number of open handles
+    if(open_handles[id] >= MAX_HANDLES) //max handles already open; could be easily expanded to contain the number of open handles
         return NULL;
     ++open_handles[id];
+
+    //TODO here is where will will recover the handle
 
     file_handle_t * ret = malloc(sizeof (file_handle_t));
     ret->file_id = id;
@@ -111,7 +93,6 @@ file_open(enum FILE_ID id) {
 // Clean-up handle structure
 // When this function returns, the flash state must reflect all pending writes
 // in order
-
 void
 file_close(file_handle_t * handle) {
     file_sync(handle);
@@ -119,6 +100,7 @@ file_close(file_handle_t * handle) {
     free(handle);
 }
 
+//helper function for advancing the read pointer
 static uint8_t check_read_pointer(file_handle_t *handle)
 {
   if(handle->raw_read_chunk_start == handle->write_offset) //we have caught up with read pointer
@@ -131,6 +113,7 @@ static uint8_t check_read_pointer(file_handle_t *handle)
   return 0;
 }
 
+//move the read pointer along, updating appropriately
 static void advance_read_pointer_to_next_chunk(file_handle_t *handle)
 {
   //we might be fine where we are.
@@ -183,6 +166,7 @@ static void advance_read_pointer_to_next_chunk(file_handle_t *handle)
   }
 }
 
+//helper for moving the destructive read pointer forward
 static uint8_t check_destructive_read_pointer(file_handle_t *handle)
 {
   if(handle->destructive_read_offset == handle->raw_read_chunk_start) //we have caught up with read pointer
@@ -195,6 +179,7 @@ static uint8_t check_destructive_read_pointer(file_handle_t *handle)
   return 0;
 }
 
+//move the destructive read pointer to the next valid chunk
 static void advance_destructive_read_pointer_to_next_chunk(file_handle_t *handle)
 {
   //we might be fine where we are.
@@ -253,7 +238,6 @@ static void advance_destructive_read_pointer_to_next_chunk(file_handle_t *handle
 // Delete the first n bytes of file, move file handles to point to same data
 // In case of unexpected power down, the state of the flash must at all times
 // reflect either the unchanged file, or the file with all N bytes deleted.
-
 size_t
 file_consume(file_handle_t * handle, size_t size) {
     size_t i = 0;
@@ -320,24 +304,22 @@ file_consume(file_handle_t * handle, size_t size) {
 
 // return the number of bytes that would be returned if one were to seek to 0
 // then read until end of file
-
 size_t
 file_size(file_handle_t * handle) {
-
+    return used_space(handle);
 }
 
 // Commit all changes to flash.
 // If unexpected power down, flash state will reflect entire pending writes in order,
 // or no change.
 // When this function returns, flash state must reflect all pending writes
-
+//Nothing to do here, as we do not perform lazy writes
 void
 file_sync(file_handle_t * handle) {
 
 }
 
-// if end-of-file, return the number of bytes read
-
+// Returns the number of bytes actually read
 size_t
 file_read(file_handle_t * handle, uint8_t* data, size_t size) {
     size_t i = 0;
@@ -403,16 +385,15 @@ file_read(file_handle_t * handle, uint8_t* data, size_t size) {
 
 // set read and write pointers to offset in file
 // Whence is SET_SEEK, SET_END, or something else from stdio.h
-
+//NOT IMPLEMENTED because this does not make sense for a FIFO. I could be
+// convinced otherwise.
 void
 file_seek(file_handle_t * handle, uint32_t offset, int whence) {
 
 }
 
-// If file full, return number of bytes written
-// Filesystem should never fill unless filesize is more than
-// half (quarter?) of the allocated flash space
-
+// Returns the number of bytes written
+// File can fill when the number of destructive reads < number of writes
 size_t
 file_write(file_handle_t *handle, uint8_t* data, size_t size) {
 

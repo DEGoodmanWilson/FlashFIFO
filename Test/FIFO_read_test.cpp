@@ -64,11 +64,11 @@ TEST_GROUP(BasicFileReadTest)
 //This test just makes sure the setup routine above is working as expected
 TEST(BasicFileReadTest, CheckInit)
 {
-    CHECK_EQUAL(1, store[f->start+FILE_OFFSET+2]);
-    CHECK_EQUAL(2, store[f->start+FILE_OFFSET+3]);
-    CHECK_EQUAL(3, store[f->start+FILE_OFFSET+4]);
-    CHECK_EQUAL(4, store[f->start+FILE_OFFSET+5]);
-    CHECK_EQUAL(0xFF, store[f->start+FILE_OFFSET+6]);
+    CHECK_EQUAL(1, store[f->start+2]);
+    CHECK_EQUAL(2, store[f->start+3]);
+    CHECK_EQUAL(3, store[f->start+4]);
+    CHECK_EQUAL(4, store[f->start+5]);
+    CHECK_EQUAL(0xFF, store[f->start+6]);
 }
 
 //test the file_read function to see if it can read the four bytes placed there by setup
