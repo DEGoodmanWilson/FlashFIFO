@@ -194,40 +194,49 @@ TEST(BasicFileReadTest, TestFileConsumePartialChunks2)
 }
 
 //sometimes writes leave some blank space at the end of a page. Make sure we skip that when reading!
-//TODO this test is ill conceived!!
-IGNORE_TEST(BasicFileReadTest, TestFileReadEndOfIncompletePage)
+TEST(BasicFileReadTest, TestFileReadEndOfIncompletePage)
 {
-    uint8_t data[4] = {0};
-    //first of all, let's get a couple of page's worth of data in there.
-    uint8_t written = 4; //need to account for data already written in setup
-    uint8_t chunks = 1;
-    while(f->write_offset < FLASH_PAGE_SIZE)
-    {
-        written += file_write(f, data, 4);
-        ++chunks;
-    }
-    //the last chunk will have been written to the second page, leaving about 2 bytes at the end of the first page unwritten, i.e. 0xFF
+    //we laready have 4 bytes on page one. Let's write a full page, which will begin on page 2. Then see if doing a read catches up properly
+    uint8_t size = FLASH_PAGE_SIZE - 2;
+    uint8_t data[FLASH_PAGE_SIZE - 2] = {0};
 
-    //now, let's read then consume an entire pages worth.
-    // NOTICE that the amount of data in one page is AT LEAST 2 bytes less than total page size, because of metadata
-    //so we have to rely on the nunber of chunks in previous bit of code to read out EXACTLY one page
-    uint32_t read_offset = 0;
-    while(chunks >= 3) //read all but the last two chunks; the last chunk is on the next page.
-    {
-        file_read(f, data, 4);
-        read_offset += 6;
-        CHECK_EQUAL(read_offset, f->raw_read_chunk_start);
-        file_consume(f, 4);
-        --chunks;
-    }
+    file_write(f, data, size); //won't fit on page 1, moves ahead to page 2
+    file_read(f, data, 4); //read first chunk, read point should advance past dead space to second page.
 
-    //read next to last chunk. Here, the read pointer should jump ahead to the next chunk
-    file_read(f, data, 4);
-    read_offset += 8; //skip last two bytes on page
-    CHECK_EQUAL(read_offset, f->raw_read_chunk_start);
+    CHECK_EQUAL(128, f->raw_read_chunk_start);
+}
+
+//Now test the wrap-around functionality.
+//A read that begins near the end of the file should wrap around to the beginning, if the write pointer
+//is past the beginning.
+TEST(BasicFileReadTest, TestReadWrapsAroundEnd)
+{
+    //first, let's write three pages, filling the file. We will then consume one page, and write one page to cause wrap around.
+    //This test presumes that write wrap-around works, and that page-erase works
+    uint8_t size = FLASH_PAGE_SIZE-2;
+    uint8_t data[FLASH_PAGE_SIZE-2] = {0};
+
+    file_write(f, data, size); //this will actually go onto the second page, because it is too large to fit on first page with the 4 bytes already there.
+    file_write(f, data, size); //this will go to third page
+    //verify that we have three pages of data
+    CHECK_EQUAL(4, store[0]);
+    CHECK_EQUAL(size, store[128]);
+    CHECK_EQUAL(size, store[256]);
+
+    //consume the data on the first page
+    file_read(f, data, 4); //moves read pointer to beginning of second page, 128
     file_consume(f, 4);
 
-    //make sure we can read the last chunk!
+    //and write another page
+    file_write(f, data, size);
+
+    //now, the write pointer is at the beginning of the second page, as is the read pointer. advance the read pointer all the way around
+    uint8_t read = file_read(f, data, size); //moves pointer to beginning of third page, 256
+    CHECK_EQUAL(size, read);
+    CHECK_EQUAL(256, f->raw_read_chunk_start);
+    read = file_read(f, data, size); //moves pointer to wrap around to first page, 0
+    CHECK_EQUAL(size, read);
+    CHECK_EQUAL(0, f->raw_read_chunk_start);
 }
 
 
@@ -276,7 +285,6 @@ TEST(BasicFileReadTest, TestFileConsumeBeyondWritePointer)
 //check that a read operation wraps around the last page correctly
 
 //check that a destructive read that completes a page wipes the page
-//TODO make test simpler. Just go one page. Test two after that.
 TEST(BasicFileReadTest, TestPageConsumptionErasesPage)
 {
     uint8_t data[4] = {0};
@@ -299,14 +307,41 @@ TEST(BasicFileReadTest, TestPageConsumptionErasesPage)
         --chunks;
     }
     //make sure that first page got erased, but second has not
-    CHECK_EQUAL(0xFF, store[0]); //should be 0xFF if erased! //SHOULD BE 0xFF!
+    CHECK_EQUAL(0xFF, store[0]); //0xFF means it was erased
     CHECK_EQUAL(0x04, store[128]); //first byte of second page
 }
 
-//Now, let's go back to file_read, and test the wrap-around functionality.
-//A read that begins near the end of the file should wrap around to the beginning, if the write pointer
-//is past the beginning.
-//TEST(BasicFileReadTest)
+//check that a destructive read that completes a page wipes the page
+//extension to check when two pages have been consumed.
+TEST(BasicFileReadTest, TestPageConsumptionErasesTwoPages)
+{
+    uint8_t data[4] = {0};
+    //first of all, let's get a couple of page's worth of data in there.
+    uint8_t written = 4; //need to account for data already written in setup
+    uint8_t chunks = 1;
+    while(f->write_offset < 2*FLASH_PAGE_SIZE)
+    {
+        written += file_write(f, data, 4);
+        ++chunks;
+    }
+
+    //now, let's read then consume almost two pages worth.
+    // NOTICE that the amount of data in one page is AT LEAST 2 bytes less than total page size, because of metadata
+    //so we have to rely on the number of chunks in previous bit of code to read out EXACTLY one page
+    while(chunks >= 1)
+    {
+        file_read(f, data, 4);
+        file_consume(f, 4);
+        --chunks;
+    }
+    //make sure that first and second page got erased, but third has not
+    CHECK_EQUAL(0xFF, store[0]); //0xFF means it was erased
+    CHECK_EQUAL(0xFF, store[128]); //first byte of second page
+    CHECK_EQUAL(0x04, store[256]); //third page should be intact
+}
+
+//Need check for power failure during page erasure, to make sure we can recover properly from that.
+//will need to write this test after we have code for recovering file handles post power-loss.
 
 
 //CORNER CASES that are not being tested currently, but that need to be

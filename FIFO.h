@@ -66,6 +66,8 @@ typedef struct file_handle_proto_t {
     uint32_t raw_read_chunk_start;
     uint32_t raw_read_chunk_offset;
     uint32_t destructive_read_offset;
+
+    uint32_t free_space;
 } file_handle_t;
 #define INVALID_FILE_HANDLE   ((file_handle_t*)NULL)
 
