@@ -349,7 +349,7 @@ file_read(file_handle_t * handle, uint8_t* data, size_t size) {
             //it might be that the write pointer is actually BEHIND us. We can test by looking
             //ahead to see if the current chunk is free or written
             uint8_t size = 0;
-            flash_read(handle->raw_read_chunk_start, &size, 1);
+            flash_read(handle->start + handle->raw_read_chunk_start, &size, 1);
             if(size == 0xFF) //the write pointer is ahead of us, ditch
                 return i;
             //else the write pointer is actually behind us, and we can proceed
@@ -358,13 +358,13 @@ file_read(file_handle_t * handle, uint8_t* data, size_t size) {
         //read in the current chunk size, so we can calculate where the next chunk begins
         uint8_t remaining_chunk_size;
         uint8_t chunk_size;
-        flash_read(handle->raw_read_chunk_start, &chunk_size, 1);
+        flash_read(handle->start + handle->raw_read_chunk_start, &chunk_size, 1);
         remaining_chunk_size = chunk_size - handle->raw_read_chunk_offset;
 
         //is the current chunk smaller than what we need? If so, we will be moving to the next chunk.
         if(remaining_chunk_size > size) //chunk is smaller, we will only read what we need
         {
-            uint8_t read_amount = flash_read(handle->raw_read_chunk_start + 2 + handle->raw_read_chunk_offset, (void*)(data+i), size);
+            uint8_t read_amount = flash_read(handle->start + handle->raw_read_chunk_start + 2 + handle->raw_read_chunk_offset, (void*)(data+i), size);
             size -= read_amount;
             i += read_amount;
 
@@ -383,7 +383,7 @@ file_read(file_handle_t * handle, uint8_t* data, size_t size) {
         else //we need to shift into the next chunk, and keep going
         {
             //read all of the remaining chunk
-            uint8_t read_amount = flash_read(handle->raw_read_chunk_start + 2 + handle->raw_read_chunk_offset, (void*)(data+i), remaining_chunk_size);
+            uint8_t read_amount = flash_read(handle->start + handle->raw_read_chunk_start + 2 + handle->raw_read_chunk_offset, (void*)(data+i), remaining_chunk_size);
             size -= read_amount;
             i += read_amount;
             //move to next chunk
