@@ -17,7 +17,7 @@
  You should have received a copy of the GNU General Public License
  along with FlashFIFO.  If not, see <http://www.gnu.org/licenses/>.
 
-*************************************
+ *************************************
 
  This file implements the flash API defined in flash_port.c. This implementation
  is meant to be a reasonably faithful emulation of how a NOR flash actually works.
@@ -25,7 +25,7 @@
  classes. To this end, it provides some additional functions for setting up
  test cases such as power failures and the like.
 
-************************************/
+ ************************************/
 
 #include <stdio.h>
 #include <stdint.h>
@@ -44,28 +44,29 @@ uint8_t store[FLASH_CHIP_SIZE]; //the simulated flash itself
 void flash_init(void)
 {
     write_count = fail_after = is_off = 0;
-    for(uint32_t i = 0; i < FLASH_CHIP_SIZE; ++i)
+    for (uint32_t i = 0; i < FLASH_CHIP_SIZE; ++i)
         store[i] = 0xFF;
 }
 
-
-static void store_write(uint32_t addr, void*data, size_t n){
-    for(uint32_t i = addr; i < (addr+n); ++i)
+static void store_write(uint32_t addr, void*data, size_t n)
+{
+    for (uint32_t i = addr; i < (addr + n); ++i)
     {
-        store[i] &= *(uint8_t*)(data+i-addr); //simulate NOR flash!
+        store[i] &= *(uint8_t*) (data + i - addr); //simulate NOR flash!
     }
 }
 
 static void store_erase_page(uint16_t page_num)
 {
     uint32_t addr = page_num*FLASH_PAGE_SIZE;
-    for(uint32_t i = addr; i < (addr+FLASH_PAGE_SIZE); ++i)
+    for (uint32_t i = addr; i < (addr + FLASH_PAGE_SIZE); ++i)
         store[i] = 0xFF;
 }
 
-static void store_read(uint32_t addr, void* data, size_t n){
-    for(uint32_t i = 0; i < n; ++i)
-        *(uint8_t*)(data+i) = store[i+addr];
+static void store_read(uint32_t addr, void* data, size_t n)
+{
+    for (uint32_t i = 0; i < n; ++i)
+        *(uint8_t*) (data + i) = store[i + addr];
 }
 
 void flash_force_fail(uint8_t count)
@@ -81,41 +82,45 @@ void flash_force_succeed(void)
     is_off = 0;
 }
 
-int flash_write(uint32_t addr, void*data, size_t n){
-	assert( addr < FLASH_CHIP_SIZE );
-	assert( addr + n <= FLASH_CHIP_SIZE );
+int flash_write(uint32_t addr, void*data, size_t n)
+{
+    assert(addr < FLASH_CHIP_SIZE);
+    assert(addr + n <= FLASH_CHIP_SIZE);
 
-        if(fail_after)
+    if (fail_after)
+    {
+        if (fail_after == write_count)
         {
-            if(fail_after == write_count){
-		//printf("Simulate unexpected power down!\n");
-                is_off = 1;
-            }
+            //printf("Simulate unexpected power down!\n");
+            is_off = 1;
         }
+    }
 
-        write_count++;
+    write_count++;
 
 
-        if(is_off) return 0; //powered off, can't write!
+    if (is_off) return 0; //powered off, can't write!
 
-	store_write(addr, data, n);
-	return n;
+    store_write(addr, data, n);
+    return n;
 }
 
-int flash_read(uint32_t addr, void* data, size_t n){
-	assert( addr < FLASH_CHIP_SIZE );
-	assert( addr + n <= FLASH_CHIP_SIZE );
+int flash_read(uint32_t addr, void* data, size_t n)
+{
+    assert(addr < FLASH_CHIP_SIZE);
+    assert(addr + n <= FLASH_CHIP_SIZE);
 
-	store_read(addr,data,n);
-	return n;
+    store_read(addr, data, n);
+    return n;
 }
 
-void flash_erase(uint32_t addr, size_t len){
-	assert( addr < FLASH_CHIP_SIZE );
-	assert( len + addr <= FLASH_CHIP_SIZE );
-	assert( len % FLASH_PAGE_SIZE == 0 ); //TODO are these assertions going to be correct?
-	assert( addr % FLASH_PAGE_SIZE == 0 );
+void flash_erase(uint32_t addr, size_t len)
+{
+    assert(addr < FLASH_CHIP_SIZE);
+    assert(len + addr <= FLASH_CHIP_SIZE);
+    assert(len % FLASH_PAGE_SIZE == 0); //TODO are these assertions going to be correct?
+    assert(addr % FLASH_PAGE_SIZE == 0);
 
-        store_erase_page(addr / FLASH_PAGE_SIZE);
+    store_erase_page(addr / FLASH_PAGE_SIZE);
 }
 

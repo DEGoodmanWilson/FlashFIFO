@@ -17,7 +17,7 @@
  You should have received a copy of the GNU General Public License
  along with FlashFIFO.  If not, see <http://www.gnu.org/licenses/>.
 
-*************************************
+ *************************************
 
  This file defines an abstract API that defines the hardware-level flash
  interface. These functions will either need to be implemented in your own code
@@ -26,30 +26,31 @@
  It is an assumption of FlashFIFO that single byte writes to flash are atomic.
  No other assumptions of atomicity are assumed.
 
-************************************/
+ ************************************/
 
 #ifndef SPI_PORT_H
 #define	SPI_PORT_H
 
 #ifdef	__cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #include <stdint.h>
 
-//initialize the flash parameters to match the physical layout
-void flash_init(void);
+    //initialize the flash parameters to match the physical layout
+    void flash_init(void);
 
-//write a value to flash
-int flash_write(uint32_t addr, void* data, size_t n);
+    //write a value to flash
+    int flash_write(uint32_t addr, void* data, size_t n);
 
-//erase a value from flash. Notice that addr and len are basically only
-//used to determine which and how many pages to erase, as erase commands
-//affect entire pages at a time. So be careful calling it!
-void flash_erase(uint32_t addr, size_t len);
+    //erase a value from flash. Notice that addr and len are basically only
+    //used to determine which and how many pages to erase, as erase commands
+    //affect entire pages at a time. So be careful calling it!
+    void flash_erase(uint32_t addr, size_t len);
 
-//read a value from flash
-int flash_read(uint32_t addr, void* data, size_t n);
+    //read a value from flash
+    int flash_read(uint32_t addr, void* data, size_t n);
 
 
 #ifdef	__cplusplus

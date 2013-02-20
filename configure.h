@@ -17,12 +17,12 @@
  You should have received a copy of the GNU General Public License
  along with FlashFIFO.  If not, see <http://www.gnu.org/licenses/>.
 
-*************************************
+ *************************************
 
  This file provides some basic configuration parameters that define the size
  of the flash being used.
 
-************************************/
+ ************************************/
 
 #ifndef CONFIGURE_H
 #define	CONFIGURE_H

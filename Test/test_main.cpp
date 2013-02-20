@@ -17,16 +17,16 @@
  You should have received a copy of the GNU General Public License
  along with FlashFIFO.  If not, see <http://www.gnu.org/licenses/>.
 
-*************************************
+ *************************************
 
  This file provides a basic main() function for running the unit tests.
  It is only used for unit testing; it is not part of the final library itself.
 
-************************************/
+ ************************************/
 
 #include <CppUTest/CommandLineTestRunner.h>
 
 int main(int argc, char** argv)
 {
-	CommandLineTestRunner::RunAllTests(argc, argv);
+    CommandLineTestRunner::RunAllTests(argc, argv);
 }
