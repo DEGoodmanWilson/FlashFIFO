@@ -90,8 +90,6 @@ file_open(enum FILE_ID id)
         return NULL;
     ++open_handles[id];
 
-    //TODO here is where will will recover the handle
-
     file_handle_t * ret = malloc(sizeof (file_handle_t));
     ret->file_id = id;
     ret->start = id * FILE_SIZE + FILE_OFFSET;
@@ -102,7 +100,10 @@ file_open(enum FILE_ID id)
     ret->write_count = 1;
     ret->free_space = FILE_SIZE - (PAGE_COUNTER_SIZE * FILE_SIZE / FLASH_PAGE_SIZE); //subtracting the number of page count bytes;
 
-    //first things first, let's identify where the write pointer goes.
+    //first things first: let's identify and fix any failed erased pages.
+
+
+    //Now, let's identify where the write pointer goes.
     //Each page has a byte at the beginning indicating the write sequence;
     //  the number of '1's indicates the write order. Writes start from 0xFE
     //  and continue down to 0x00; The last page written is the one with the
@@ -119,11 +120,11 @@ file_open(enum FILE_ID id)
     for (i = 0; i < (FILE_SIZE / FLASH_PAGE_SIZE); ++i) //iterate over pages
     {
         //read first byte
-        flash_read(ret->start + (FLASH_PAGE_SIZE*i), &counter, 1);
+        flash_read(ret->start + (FLASH_PAGE_SIZE * i), &counter, 1);
         if (counter != 0xFF)
         {
             ++pages_written;
-            if(counter < smallest)
+            if (counter < smallest)
             {
                 smallest = counter;
                 first_write_page = i;
@@ -133,11 +134,11 @@ file_open(enum FILE_ID id)
     ret->write_offset = first_write_page * FLASH_PAGE_SIZE;
     if (smallest < 0xFF)
     {
-        ret->write_count = 8-count_ones(smallest) + 1;
-        if(ret->write_count == 9) ret->write_count = 1;
+        ret->write_count = 8 - count_ones(smallest) + 1;
+        if (ret->write_count == 9) ret->write_count = 1;
     }
-    if(pages_written)
-            ret->free_space = FILE_SIZE - ((pages_written-1)*FLASH_PAGE_SIZE) - (FILE_SIZE/FLASH_PAGE_SIZE * PAGE_COUNTER_SIZE); //number of bytes written - number of counter bytes
+    if (pages_written)
+        ret->free_space = FILE_SIZE - ((pages_written - 1)*(FLASH_PAGE_SIZE - PAGE_COUNTER_SIZE)) - (FILE_SIZE / FLASH_PAGE_SIZE * PAGE_COUNTER_SIZE); //number of bytes written - number of counter bytes
 
     //now that we have the /page/ let's identify the /chunk/!
     //possibility that this page is entirely free, which we need to consider. Will recognize it because first byte is 0xFF
@@ -146,19 +147,19 @@ file_open(enum FILE_ID id)
     uint8_t size = 0;
     flash_read(ret->start + ret->write_offset + 1, &size, 1);
     //a free chunk is one in which the size is 0xFF
-    if(size == 0xFF) //starting on a fresh page
+    if (size == 0xFF) //starting on a fresh page
     {
         //read in the page counter to see if it is free or not.
-            uint8_t check = 0;
-            flash_read(ret->start + ret->write_offset, &check, PAGE_COUNTER_SIZE);
-            if (check == 0xFF) //FREE SPACE! move in.
-            {
-                uint8_t counter = (0xFF << ret->write_count);
-                ++ret->write_count;
-                if(ret->write_count == 9) ret->write_count = 1;
-                flash_write(ret->start + ret->write_offset, &counter, PAGE_COUNTER_SIZE);
-            }
-            ret->write_offset += PAGE_COUNTER_SIZE;
+        uint8_t check = 0;
+        flash_read(ret->start + ret->write_offset, &check, PAGE_COUNTER_SIZE);
+        if (check == 0xFF) //FREE SPACE! move in.
+        {
+            uint8_t counter = (0xFF << ret->write_count);
+            ++ret->write_count;
+            if (ret->write_count == 9) ret->write_count = 1;
+            flash_write(ret->start + ret->write_offset, &counter, PAGE_COUNTER_SIZE);
+        }
+        ret->write_offset += PAGE_COUNTER_SIZE;
     }
     else //need to find our place in this page.
     {
@@ -182,15 +183,129 @@ file_open(enum FILE_ID id)
                 {
                     uint8_t counter = (0xFF << ret->write_count);
                     ++ret->write_count;
-                    if(ret->write_count == 9) ret->write_count = 1;
+                    if (ret->write_count == 9) ret->write_count = 1;
                     flash_write(ret->start + ret->write_offset, &counter, PAGE_COUNTER_SIZE);
+                    ret->write_offset += PAGE_COUNTER_SIZE;
                 }
-                ret->write_offset += PAGE_COUNTER_SIZE;
+                //else, do nothing, do not move into the page; it is not ready for writing. Need to linger where we are and wait.
                 break; //exit the loop
             }
             flash_read(ret->start + ret->write_offset, &size, 1);
         }
     }
+
+    //now, somewhat more difficult, we need to locate the destructive read pointer.
+    //The general procedure will involve moving /backwards/ from the write pointer.
+    // Needless to say, there is no method for moving the pointer backwards chunk-by-chunk.
+    // Instead, we need to move backwards a page at a time, then move forwards through that page, keeping
+    // track of potential candidate landing chunks. Fun!
+    //we begin by starting at the page the write pointer is on.
+    ret->destructive_read_offset = FLASH_PAGE_SIZE * (ret->write_offset / FLASH_PAGE_SIZE);
+
+    //examine the current page.
+    //first, check to see if write pointer is at location 0; which indicates that the write pointer
+    // is waiting on this page to be freed up; in this case, we need to start a page earlier.
+    //if(ret->destructive_read_offset == ret->write_offset)
+    //{
+    //    //go back a page
+    //    if(ret->destructive_read_offset == 0)
+    //        ret->destructive_read_offset = FILE_SIZE - FLASH_PAGE_SIZE;
+    //    else
+    //        ret->destructive_read_offset -= FLASH_PAGE_SIZE;
+    //}
+
+    ret->destructive_read_offset += PAGE_COUNTER_SIZE; //skip page the page counter, we don't care about it anymore.
+    //examine first valid chunk. If not consumed, continue to the code below that skips to the previous page
+    //if consumed, fast forward to the write pointer.
+    //uint8_t consumed = 0;
+    //flash_read(ret->start + ret->destructive_read_offset + 1, &consumed, 1);
+    //if(consumed == 0xFC) //it's consumed, fast forward
+    //{
+    //    ret->free_space += (ret->write_offset - ret->destructive_read_offset);
+    //    ret->destructive_read_offset = ret->write_offset;
+    //}
+
+    // we need to loop, skipping
+    // backwards a page at a time, and looking for either: the last consumed
+    // chunk, or an empty page, or we encounter the page the write pointer is on
+    uint8_t done = 0;
+    while (!done)
+    {
+        //examine the page.
+
+        //first, see if write pointer is on this page. since we have already examined this page earlier, we know
+        // that at this point, it must be that the write pointer is sitting and waiting on the destructive read pointer to free the page
+        // up. So park the destructive read pointer where it is, and break
+        if (ret->write_offset + 1 == ret->destructive_read_offset)
+            break;
+
+        uint8_t check = 0;
+        flash_read(ret->start + ret->destructive_read_offset - PAGE_COUNTER_SIZE, &check, PAGE_COUNTER_SIZE);
+        if (check == 0xFF) //this is an empty page. move destructive read pointer to beginning of next page and quit
+        {
+            //go forward a page
+            ret->destructive_read_offset += FLASH_PAGE_SIZE;
+            if (ret->destructive_read_offset >= FILE_SIZE)
+                ret->destructive_read_offset = 0 + PAGE_COUNTER_SIZE;
+            break;
+        }
+        flash_read(ret->start + ret->destructive_read_offset + 1, &check, 1);
+        if (check == 0xFC) //this this chunk is consumed, fast forward over invalid and consumed chunks until we hit a non-consumed valid chunk of the end of the page
+        {
+            while (1)
+            {
+                uint8_t c_size = 0;
+                uint8_t c_valid = 0;
+                flash_read(ret->start + ret->destructive_read_offset, &c_size, 1);
+                flash_read(ret->start + ret->destructive_read_offset + 1, &c_valid, 1);
+                if(ret->destructive_read_offset == ret->write_offset) //done
+                {
+                    done = 1;
+                    break;
+                }
+                else if (c_size == 0xFF) //empty space at the end of the page; FF to next page and quit
+                {
+                    //delete the page
+                    uint32_t page_start = FLASH_PAGE_SIZE * (ret->destructive_read_offset/FLASH_PAGE_SIZE);
+                    flash_erase(ret->start + page_start, FLASH_PAGE_SIZE);
+                    ret->destructive_read_offset = FLASH_PAGE_SIZE * (ret->destructive_read_offset / FLASH_PAGE_SIZE) + FLASH_PAGE_SIZE;
+                    if(ret->destructive_read_offset == FILE_SIZE)
+                        ret->destructive_read_offset = 0;
+                    ret->destructive_read_offset += PAGE_COUNTER_SIZE;
+                    done = 1;
+                    break;
+                }
+                else if (c_valid == 0xFE) //a non-consumed chunk, stop here
+                {
+                    done = 1;
+                    break;
+                }
+                //move to the next chunk
+                ret->destructive_read_offset += c_size + 2;
+                ret->free_space += c_size + 2;
+                if(!(ret->destructive_read_offset % FLASH_PAGE_SIZE)) //end of page
+                {
+                    //delete the page
+                    uint32_t page_start = FLASH_PAGE_SIZE * ((ret->destructive_read_offset-1)/FLASH_PAGE_SIZE);
+                    flash_erase(ret->start + page_start, FLASH_PAGE_SIZE);
+
+                    ret->destructive_read_offset += PAGE_COUNTER_SIZE;
+                }
+            }
+        }
+
+        if(!done)
+        {
+            //go back a page
+        if (ret->destructive_read_offset == 1)
+            ret->destructive_read_offset = FILE_SIZE - FLASH_PAGE_SIZE + PAGE_COUNTER_SIZE;
+        else
+            ret->destructive_read_offset -= FLASH_PAGE_SIZE;
+        }
+    }
+
+    //Finally, set the read offset to be the destructive read offset
+    ret->raw_read_chunk_start = ret->destructive_read_offset;
     return ret;
 }
 
@@ -419,7 +534,7 @@ file_consume(file_handle_t * handle, size_t size)
         //notice that at this point, the read pointer could be at the start of a new page. If so, we should erase the page we just left behind
         //check to see if page needs erasure. We check by seeing if we crossed a page boundary
         //we do this by seeing if the read pointer is at the first byte of a new page
-        if (!((handle->destructive_read_offset-PAGE_COUNTER_SIZE) % FLASH_PAGE_SIZE))
+        if (!((handle->destructive_read_offset - PAGE_COUNTER_SIZE) % FLASH_PAGE_SIZE))
         {
             //get the start address for the previous page, and erase it.
             uint32_t page_start;
@@ -551,8 +666,8 @@ static void advance_write_pointer_to_next_page(file_handle_t *handle)
     handle->write_offset += remaining;
     handle->free_space -= remaining;
     //moved into a new page. see if this page is free, and if so mark it and move forward
-        //otherwise hang around and wait for page to erase
-    if(handle->write_offset > FILE_SIZE)
+    //otherwise hang around and wait for page to erase
+    if (handle->write_offset > FILE_SIZE)
         handle->write_offset = 0; //wrap around
 
     uint8_t counter;
@@ -560,10 +675,10 @@ static void advance_write_pointer_to_next_page(file_handle_t *handle)
     if (counter == 0xFF) //we can move in
     {
         counter = (0xFF << handle->write_count);
-       ++handle->write_count;
-       if (handle->write_count == 9) handle->write_count = 1;
-       flash_write(handle->start + handle->write_offset, &counter, PAGE_COUNTER_SIZE);
-       handle->write_offset += PAGE_COUNTER_SIZE; //skip the counter bytes
+        ++handle->write_count;
+        if (handle->write_count == 9) handle->write_count = 1;
+        flash_write(handle->start + handle->write_offset, &counter, PAGE_COUNTER_SIZE);
+        handle->write_offset += PAGE_COUNTER_SIZE; //skip the counter bytes
     }
 }
 
@@ -587,11 +702,11 @@ static void advance_write_pointer(file_handle_t *handle)
         flash_read(handle->start + handle->write_offset, &counter, 1);
         if (counter == 0xFF) //we can move in
         {
-           counter = (0xFF << handle->write_count);
-           ++handle->write_count;
-           if (handle->write_count == 9) handle->write_count = 1;
-           flash_write(handle->start + handle->write_offset, &counter, PAGE_COUNTER_SIZE);
-           handle->write_offset += PAGE_COUNTER_SIZE; //skip the counter bytes
+            counter = (0xFF << handle->write_count);
+            ++handle->write_count;
+            if (handle->write_count == 9) handle->write_count = 1;
+            flash_write(handle->start + handle->write_offset, &counter, PAGE_COUNTER_SIZE);
+            handle->write_offset += PAGE_COUNTER_SIZE; //skip the counter bytes
         }
     }
 }
@@ -638,7 +753,7 @@ file_write(file_handle_t *handle, uint8_t* data, size_t size)
     {
         advance_write_pointer_to_next_page(handle);
         //check if we can still write from where we are
-        if(!(handle->write_offset % FLASH_PAGE_SIZE)) //if we are stuck in limbo
+        if (!(handle->write_offset % FLASH_PAGE_SIZE)) //if we are stuck in limbo
             return 0;
     }
 
