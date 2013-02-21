@@ -256,30 +256,8 @@ static void site_read_pointer(file_handle_t *handle)
     // Instead, we need to move backwards a page at a time, then move forwards through that page, keeping
     // track of potential candidate landing chunks. Fun!
     //we begin by starting at the page the write pointer is on.
-    handle->destructive_read_offset = FLASH_PAGE_SIZE * (handle->write_offset / FLASH_PAGE_SIZE);
+    handle->destructive_read_offset = FLASH_PAGE_SIZE * (handle->write_offset / FLASH_PAGE_SIZE) + PAGE_COUNTER_SIZE;
 
-    //examine the current page.
-    //first, check to see if write pointer is at location 0; which indicates that the write pointer
-    // is waiting on this page to be freed up; in this case, we need to start a page earlier.
-    //if(ret->destructive_read_offset == ret->write_offset)
-    //{
-    //    //go back a page
-    //    if(ret->destructive_read_offset == 0)
-    //        ret->destructive_read_offset = FILE_SIZE - FLASH_PAGE_SIZE;
-    //    else
-    //        ret->destructive_read_offset -= FLASH_PAGE_SIZE;
-    //}
-
-    handle->destructive_read_offset += PAGE_COUNTER_SIZE; //skip page the page counter, we don't care about it anymore.
-    //examine first valid chunk. If not consumed, continue to the code below that skips to the previous page
-    //if consumed, fast forward to the write pointer.
-    //uint8_t consumed = 0;
-    //flash_read(ret->start + ret->destructive_read_offset + 1, &consumed, 1);
-    //if(consumed == 0xFC) //it's consumed, fast forward
-    //{
-    //    ret->free_space += (ret->write_offset - ret->destructive_read_offset);
-    //    ret->destructive_read_offset = ret->write_offset;
-    //}
 
     // we need to loop, skipping
     // backwards a page at a time, and looking for either: the last consumed
