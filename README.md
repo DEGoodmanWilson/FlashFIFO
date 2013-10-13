@@ -29,3 +29,6 @@ The Procedure
 This code is meant, in part, as a demonstration of TDD (Test-Driven Development), and in particular that TDD can be used for embedded development. TDD is a method for using unit tests to drive the development process. You think of a feature or corner case you wish to add or deal with. You write a test for that feature or corner case. /Then/ you write the code to satisfy that test. If all goes well, you don't break any other tests. In this way, adding a feature or fixing a corner case guarantees that you don't break any existing functionality. Not a single line of code is written that isn't driven by a unit test. For more on TDD, see [Wikipedia's entry](http://en.wikipedia.org/wiki/Test-driven_development).
 
 The unit tests (and a main() procedure) for this library are located in the Tests subfolder. You will need CppUTest installed for the unit tests to compile. See [The CppUTest website](http://www.cpputest.org/).
+
+[![Bitdeli Badge](https://d2weczhvl823v0.cloudfront.net/DEGoodmanWilson/flashfifo/trend.png)](https://bitdeli.com/free "Bitdeli Badge")
+
